@@ -1,0 +1,44 @@
+{
+  "name": "clientdeck",
+  "version": "0.1.0",
+  "private": true,
+  "description": "ClientDeck \u2014 a client portal for freelancers and boutique agencies.",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "db:reset": "supabase db reset",
+    "db:push": "supabase db push",
+    "test": "node --experimental-strip-types --no-warnings --test \"tests/*.test.ts\"",
+    "check": "npm run lint && npm run typecheck && npm test",
+    "test:sql": "psql \"${DATABASE_URL:-postgresql://postgres:postgres@127.0.0.1:54322/postgres}\" -v ON_ERROR_STOP=1 -f tests/sql/rls.test.sql"
+  },
+  "dependencies": {
+    "@supabase/ssr": "0.12.5",
+    "@supabase/supabase-js": "2.113.0",
+    "@tanstack/react-query": "5.102.8",
+    "clsx": "2.1.1",
+    "lucide-react": "1.39.0",
+    "next": "16.3.4",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "server-only": "0.0.1",
+    "tailwind-merge": "3.6.0",
+    "zod": "4.5.4"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "4.3.3",
+    "@types/node": "24.13.3",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.5",
+    "eslint": "9.39.5",
+    "eslint-config-next": "16.3.4",
+    "tailwindcss": "4.3.3",
+    "typescript": "5.9.3"
+  },
+  "engines": {
+    "node": ">=20.9.0"
+  }
+}
