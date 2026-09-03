@@ -8,7 +8,14 @@ import { recordAudit } from "@/lib/audit";
 import { fail, messageFrom, ok, type ActionState } from "@/actions/types";
 import type { Deliverable } from "@/lib/database.types";
 
-const MAX_UPLOAD_BYTES = 100 * 1024 * 1024;
+/**
+ * Kept in step with `serverActions.bodySizeLimit` in next.config.ts. The
+ * default matches Vercel's 4.5 MB platform ceiling for request bodies, which
+ * is enforced before the action runs — checking it here just produces a
+ * sentence a person can act on instead of a raw 413.
+ */
+const MAX_UPLOAD_MB = Number(process.env.NEXT_PUBLIC_MAX_UPLOAD_MB ?? 4);
+const MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024;
 
 const embedSchema = z.object({
   projectId: z.string().uuid(),
@@ -80,7 +87,11 @@ export async function uploadDeliverableFile(
 
     if (!projectId || !milestoneId) return fail("Missing milestone.");
     if (!(file instanceof File) || file.size === 0) return fail("Choose a file to upload.");
-    if (file.size > MAX_UPLOAD_BYTES) return fail("Files are capped at 100 MB.");
+    if (file.size > MAX_UPLOAD_BYTES) {
+      return fail(
+        `That file is ${(file.size / 1024 / 1024).toFixed(1)} MB. Uploads through the portal are capped at ${MAX_UPLOAD_MB} MB — share anything larger as a link deliverable.`,
+      );
+    }
 
     const supabase = await createClient();
 

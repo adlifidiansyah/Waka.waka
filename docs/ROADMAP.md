@@ -60,6 +60,11 @@ page), seat-count enforcement against the plan, and an organization switcher.
 - **Browser-level end-to-end tests.** The portal render path is verified against
   a real database; the click-through (approve, download, upload) is not covered
   by an automated Playwright run.
+- **Direct-to-storage uploads.** Files currently pass through a Server Action, so
+  they inherit the host's request-body limit (4.5 MB on Vercel). Issuing a signed
+  upload URL and having the browser PUT straight to Supabase Storage would lift
+  the cap to the bucket's own 100 MB and take the bytes off the function
+  entirely.
 - **Milestone reordering.** `order_index` exists and is respected; there is no
   drag-to-reorder UI.
 - **File previews.** Uploaded files download; they do not preview inline.

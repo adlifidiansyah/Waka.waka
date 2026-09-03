@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { z } from "zod";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
@@ -11,7 +12,7 @@ import {
 } from "@/lib/portal";
 import type { MilestoneWithChildren } from "@/lib/database.types";
 import { recordAudit } from "@/lib/audit";
-import { enqueueEmail } from "@/lib/email/queue";
+import { drainEmailQueue, enqueueEmail } from "@/lib/email/queue";
 import { brandOf } from "@/lib/email/brand";
 import { organizationEmails } from "@/lib/email/recipients";
 import { appUrl } from "@/lib/env";
@@ -77,6 +78,18 @@ export async function approveMilestone(
       signerName: parsed.data.signerName,
       signer,
       ip,
+    });
+
+    // Then push them out after the response, so a receipt arrives in seconds
+    // rather than waiting for the next scheduled run. The queue is still what
+    // makes delivery reliable — this is only the fast path, and anything that
+    // fails here is retried on schedule.
+    after(async () => {
+      try {
+        await drainEmailQueue(5);
+      } catch (caught) {
+        console.error("[email] post-approval drain failed", caught);
+      }
     });
 
     revalidatePath(`/portal/${parsed.data.token}`);

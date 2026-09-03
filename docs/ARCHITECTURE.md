@@ -241,8 +241,17 @@ blocked approval — but they log loudly on the server so the gap is visible.
   for it is not built.
 - **The outbox is a database table drained by cron,** not a broker. It is the
   right size for one deployment's transactional mail and has no extra
-  infrastructure to run, but it polls, so the floor on delivery latency is the
-  cron interval. Anything latency-sensitive would want a real queue.
+  infrastructure to run, but it polls, so the floor on *unattended* delivery
+  latency is the cron interval — and on a Vercel Hobby account that interval can
+  only be daily. Anything user-triggered sidesteps this: the approval action
+  drains the queue in `after()`, once its response is already sent, so a receipt
+  arrives in seconds and the schedule is only the retry path. Anything genuinely
+  latency-sensitive would want a real queue.
+- **Deliverable uploads go through a Server Action,** which binds them to the
+  host's request-body ceiling — 4.5 MB on Vercel, enforced before any of this
+  code runs. The cap is stated in the UI rather than discovered as a 413.
+  Uploading straight to Supabase Storage with a signed URL would remove the
+  limit entirely and is the right fix; it is not built.
 - **Reminder timing is UTC-only.** `daysOverdue()` floors both sides to UTC
   midnight, so a client in UTC+13 may see a "due today" email on what is already
   tomorrow for them. Per-organization timezones are a schema change plus a

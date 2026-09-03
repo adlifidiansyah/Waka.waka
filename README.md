@@ -51,6 +51,15 @@ flows, team seat invitations, and automated custom-domain provisioning.
 
 ---
 
+## Deploying
+
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fadlifidiansyah%2FWaka.waka%2Ftree%2Fclaude%2Ffreelance-agency-portal-496pqb&project-name=clientdeck&repository-name=clientdeck&env=NEXT_PUBLIC_SUPABASE_URL,NEXT_PUBLIC_SUPABASE_ANON_KEY,SUPABASE_SERVICE_ROLE_KEY,NEXT_PUBLIC_APP_URL,CRON_SECRET&envDescription=Supabase+project+keys+plus+your+deployment+URL.+DEPLOY.md+says+where+to+find+each+one.&envLink=https%3A%2F%2Fgithub.com%2Fadlifidiansyah%2FWaka.waka%2Fblob%2Fclaude%2Ffreelance-agency-portal-496pqb%2FDEPLOY.md)
+
+The button imports the repo and prompts for the environment variables. You still
+need a Supabase project for it to point at — [DEPLOY.md](DEPLOY.md) walks
+through both, plus auth redirects, email, payments and the Vercel platform
+limits the repo is configured around.
+
 ## Getting started
 
 ```bash
