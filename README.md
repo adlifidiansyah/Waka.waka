@@ -20,6 +20,9 @@ Clients never create an account. They click a link.
 |---|---|
 | Magic-link client access (revocable, optionally expiring) | `src/lib/tokens.ts`, `src/lib/portal.ts` |
 | Portal links emailed to the client, branded per studio | `src/lib/email/**`, `src/actions/client-links.ts` |
+| Approval receipts and studio notifications on sign-off | `src/actions/portal.ts`, `src/lib/email/render.ts` |
+| Scheduled payment reminders, with a manual nudge | `src/lib/email/schedule.ts`, `src/lib/email/reminders.ts` |
+| Retrying outbox with bounce/complaint suppression | `src/lib/email/queue.ts`, `src/app/api/webhooks/resend` |
 | Milestone tracker with a visual progress bar | `src/components/portal/portal-overview.tsx` |
 | One-click approvals with a signed, timestamped audit row | `src/actions/portal.ts`, `portal_approve_milestone()` |
 | Asset Locker — downloads gated on invoice payment | `isDeliverableUnlocked()`, `src/actions/portal.ts` |
@@ -32,9 +35,7 @@ Clients never create an account. They click a link.
 
 Not built (deliberately deferred — see [docs/ROADMAP.md](docs/ROADMAP.md)):
 contract e-signatures, WhatsApp notification webhooks, change-request/scope-creep
-flows, team seat invitations, automated custom-domain provisioning, and the
-other transactional emails (approval receipts, payment reminders) — only the
-portal-link email is wired.
+flows, team seat invitations, and automated custom-domain provisioning.
 
 ---
 
@@ -80,7 +81,7 @@ values ('11111111-1111-4111-8111-111111111111', '<your auth.users id>', 'owner')
 ```bash
 npm run check     # eslint + tsc --noEmit + unit tests
 npm test          # unit tests only (token, webhook signature, embed allowlist)
-npm run test:sql  # RLS, entitlement and audit assertions against a live database
+npm run test:sql  # RLS, entitlement, audit and outbox assertions against a live database
 ```
 
 `npm run test:sql` needs a running database with the migrations applied
@@ -116,27 +117,72 @@ three decisions worth knowing up front:
 ## Email
 
 Set `RESEND_API_KEY` and `RESEND_FROM_EMAIL` (a verified sender on a domain you
-control) and the client-links panel gains an "email this link to the client"
-option. The email is branded with the studio's logo, colour and name, carries an
-optional note the freelancer types, and sets `reply_to` to the freelancer's own
-address so client replies land in their inbox rather than a no-reply void.
+control) to turn email on. Without them the app runs normally and the email
+options are disabled with a note explaining what to set.
 
-Two consequences of the token design are surfaced in the UI rather than hidden:
+Four emails are wired, all branded with the studio's logo, colour and name:
 
-- **A link cannot be re-sent, only re-issued.** Only the SHA-256 hash is stored,
-  so there is no raw token left to put in a second email. The panel says so, and
-  "Create & send" always mints a fresh link.
-- **A failed send does not fail the action.** The link was created and is valid,
-  so the panel shows it for copying alongside the provider's own reason for
-  refusing — an unverified domain, a bad recipient — instead of a flat error
-  that implies nothing happened.
+| Email | To | Trigger |
+|---|---|---|
+| Portal link | Client | The freelancer ticks "email this link" when creating one |
+| Approval receipt | Client | They approve a milestone in the portal |
+| Approval notification | Studio | Same event — one per team member |
+| Payment reminder | Client | An unpaid invoice reaches a step on the schedule, or the freelancer clicks "Send reminder" |
 
-Delivery state is recorded on `client_access_tokens` (`emailed_at`,
-`emailed_to`, `email_provider_id`) and every send, and every failure, appends to
-the audit trail.
+### Sent inline vs. queued
 
-Without the two variables the app runs normally; the option is disabled with a
-note explaining what to set.
+The portal link is sent **inline**, because a freelancer is watching it go out
+and can act on a failure. Everything else goes through an **outbox**
+(`email_messages`), because nobody is looking when it fires and a dropped send
+would be silent. The outbox gives those messages retries with exponential
+backoff, a dedupe key so a reminder cannot fire twice, and a record of what was
+sent.
+
+### Scheduling
+
+Payment reminders need something to tick. `/api/cron/email` works out which
+reminders are due and then drains the outbox — one endpoint, so there is one
+thing to schedule. `vercel.json` already runs it hourly; anywhere else, call it
+on a schedule with the shared secret:
+
+```bash
+curl -H "Authorization: Bearer $CRON_SECRET" https://your-app/api/cron/email
+```
+
+It is a public URL that sends mail, so it refuses to run unless `CRON_SECRET`
+is set and matches.
+
+The schedule is five touches over seventeen days — three days before due, on the
+due date, then 3, 7 and 14 days late — and then it stops. The tone firms up as
+the invoice ages. After a cron outage the client gets the current step, not a
+backlog of the ones that were missed.
+
+### Bounces
+
+Add a Resend webhook pointing at `POST /api/webhooks/resend` with
+`email.bounced` and `email.complained` enabled, and set `RESEND_WEBHOOK_SECRET`.
+A suppressed address is never mailed again and anything already queued for it is
+cancelled. This matters more once reminders are automatic: without it, one dead
+address gets retried on a schedule for the life of the project, which is how a
+sending domain gets blocked for every studio sharing it.
+
+### Consequences of hashing tokens
+
+Two of these are surfaced in the UI rather than hidden:
+
+- **A portal link cannot be re-sent, only re-issued.** Only the SHA-256 hash is
+  stored, so there is no raw token left to put in a second email. "Create &
+  send" always mints a fresh link.
+- **The approval receipt carries no portal link,** for the same reason — linking
+  would mean minting a live token for every receipt. The client already has
+  their link; the receipt is the record.
+
+A failed inline send does not fail the action: the link was created and is
+valid, so it is shown for copying alongside the provider's own reason for
+refusing.
+
+Delivery state is recorded on `client_access_tokens` and `email_messages`, and
+sends and failures append to the audit trail.
 
 ## Payments
 
@@ -159,9 +205,10 @@ src/
   app/
     dashboard/   Freelancer-facing app (auth-gated by middleware)
     portal/      Client-facing portal, resolved from a magic-link token
-    api/         Payment webhooks
   components/    ui/ primitives, dashboard/, portal/, auth/
+    api/         Payment webhooks, Resend delivery events, the scheduled tick
   lib/           Supabase clients, auth, audit, plans, tokens, embeds, payments
+    email/       Templates, transport, outbox, reminder schedule
 supabase/
   migrations/    Schema, RLS policies, storage, business-rule functions
   seed.sql       Demo agency, project, milestones and a working client link

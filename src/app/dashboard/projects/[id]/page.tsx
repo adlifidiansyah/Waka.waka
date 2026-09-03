@@ -126,6 +126,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
                 projectId={project.id}
                 currency={project.currency}
                 milestone={milestone}
+                emailConfigured={emailConfigured}
               />
             ))
           )}

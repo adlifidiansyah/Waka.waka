@@ -36,7 +36,19 @@ export interface SendEmailInput {
 
 export type SendEmailResult =
   | { ok: true; id: string | null }
-  | { ok: false; reason: "not_configured" | "rejected" | "network"; message: string };
+  | {
+      ok: false;
+      reason: "not_configured" | "rejected" | "unavailable" | "network";
+      message: string;
+      /**
+       * Whether another attempt could plausibly succeed. A 4xx is the provider
+       * saying the message itself is wrong — an unverified domain, a malformed
+       * recipient — and retrying it just burns the budget. A 429 or a 5xx is
+       * the provider being briefly unable, which is exactly what retries exist
+       * for.
+       */
+      retryable: boolean;
+    };
 
 export function isEmailConfigured() {
   return Boolean(process.env.RESEND_API_KEY && process.env.RESEND_FROM_EMAIL);
@@ -55,6 +67,7 @@ export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult>
     return {
       ok: false,
       reason: "not_configured",
+      retryable: false,
       message:
         "Email isn't set up on this deployment. Add RESEND_API_KEY and RESEND_FROM_EMAIL, or copy the link and send it yourself.",
     };
@@ -79,12 +92,18 @@ export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult>
       | null;
 
     if (!response.ok) {
+      const transient = response.status === 429 || response.status === 408 || response.status >= 500;
       return {
         ok: false,
-        reason: "rejected",
+        reason: transient ? "unavailable" : "rejected",
+        retryable: transient,
         // Resend's message names the actual problem (unverified domain, bad
         // recipient), which is exactly what the freelancer needs to see.
-        message: body?.message ?? `Resend rejected the send (HTTP ${response.status}).`,
+        message:
+          body?.message ??
+          (transient
+            ? `Resend was unavailable (HTTP ${response.status}).`
+            : `Resend rejected the send (HTTP ${response.status}).`),
       };
     }
 
@@ -94,6 +113,7 @@ export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult>
     return {
       ok: false,
       reason: "network",
+      retryable: true,
       message: timedOut
         ? "Sending timed out. Copy the link and send it yourself."
         : "Could not reach the email provider. Copy the link and send it yourself.",

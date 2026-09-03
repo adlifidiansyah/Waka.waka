@@ -7,16 +7,20 @@ import {
   safeHttpsUrl,
 } from "../src/lib/email/render.ts";
 
-const BASE = {
-  clientName: "Maya Rahmawati",
+const BRAND = {
   studioName: "Northlight Studio",
-  projectTitle: "Aurora Coffee — Website Rebuild",
-  portalUrl: "https://portal.northlight.test/portal/abc123",
   brandColor: "#4f46e5",
   logoUrl: null,
+  showBadge: true,
+};
+
+const BASE = {
+  brand: BRAND,
+  clientName: "Maya Rahmawati",
+  projectTitle: "Aurora Coffee — Website Rebuild",
+  portalUrl: "https://portal.northlight.test/portal/abc123",
   expiresOn: null,
   message: null,
-  showBadge: true,
 };
 
 describe("HTML escaping", () => {
@@ -73,10 +77,7 @@ describe("portal link email", () => {
   });
 
   test("a studio name cannot inject markup", () => {
-    const email = renderPortalLinkEmail({
-      ...BASE,
-      studioName: '</td></tr></table><script>alert(1)</script>',
-    });
+    const email = renderPortalLinkEmail({ ...BASE, brand: { ...BRAND, studioName: '</td></tr></table><script>alert(1)</script>' } });
     assert.ok(!email.html.includes("<script>"));
     assert.ok(email.html.includes("&lt;script&gt;"));
   });
@@ -100,23 +101,20 @@ describe("portal link email", () => {
   });
 
   test("a hostile brand colour cannot escape the style attribute", () => {
-    const email = renderPortalLinkEmail({
-      ...BASE,
-      brandColor: '#fff;background-image:url("https://tracker.test/x.png")',
-    });
+    const email = renderPortalLinkEmail({ ...BASE, brand: { ...BRAND, brandColor: '#fff;background-image:url("https://tracker.test/x.png")' } });
     assert.ok(!email.html.includes("tracker.test"));
     assert.ok(email.html.includes("#4f46e5"));
   });
 
   test("a javascript: logo URL is dropped, not rendered", () => {
-    const email = renderPortalLinkEmail({ ...BASE, logoUrl: "javascript:alert(1)" });
+    const email = renderPortalLinkEmail({ ...BASE, brand: { ...BRAND, logoUrl: "javascript:alert(1)" } });
     assert.ok(!email.html.includes("javascript:"));
     // Falls back to the lettermark.
     assert.ok(email.html.includes(">N</div>"));
   });
 
   test("an https logo is used when supplied", () => {
-    const email = renderPortalLinkEmail({ ...BASE, logoUrl: "https://cdn.test/logo.png" });
+    const email = renderPortalLinkEmail({ ...BASE, brand: { ...BRAND, logoUrl: "https://cdn.test/logo.png" } });
     assert.ok(email.html.includes('src="https://cdn.test/logo.png"'));
   });
 
@@ -130,7 +128,7 @@ describe("portal link email", () => {
   test("the badge follows the organisation's plan entitlement", () => {
     assert.ok(renderPortalLinkEmail(BASE).html.includes("Powered by ClientDeck"));
     assert.ok(
-      !renderPortalLinkEmail({ ...BASE, showBadge: false }).html.includes("Powered by ClientDeck"),
+      !renderPortalLinkEmail({ ...BASE, brand: { ...BRAND, showBadge: false } }).html.includes("Powered by ClientDeck"),
     );
   });
 

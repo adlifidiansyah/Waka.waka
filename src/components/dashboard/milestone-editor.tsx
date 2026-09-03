@@ -8,6 +8,7 @@ import {
   LockOpen,
   Paperclip,
   Send,
+  BellRing,
   Trash2,
   Link as LinkIcon,
 } from "lucide-react";
@@ -18,7 +19,7 @@ import {
   toggleDeliverableLock,
   uploadDeliverableFile,
 } from "@/actions/deliverables";
-import { issueInvoice, markInvoicePaid } from "@/actions/invoices";
+import { issueInvoice, markInvoicePaid, sendPaymentReminder } from "@/actions/invoices";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { FormMessage } from "@/components/ui/form-message";
@@ -34,10 +35,12 @@ export function MilestoneEditor({
   projectId,
   currency,
   milestone,
+  emailConfigured,
 }: {
   projectId: string;
   currency: string;
   milestone: MilestoneWithChildren;
+  emailConfigured: boolean;
 }) {
   const [open, setOpen] = useState(milestone.status === "in_review");
   const [statusState, statusAction] = useActionState(setMilestoneStatus, INITIAL);
@@ -48,6 +51,7 @@ export function MilestoneEditor({
   const [removeState, removeAction] = useActionState(deleteDeliverable, INITIAL);
   const [issueState, issueAction] = useActionState(issueInvoice, INITIAL);
   const [payState, payAction] = useActionState(markInvoicePaid, INITIAL);
+  const [remindState, remindAction] = useActionState(sendPaymentReminder, INITIAL);
 
   const invoice = milestone.invoice;
   const error =
@@ -58,14 +62,16 @@ export function MilestoneEditor({
     lockState.error ??
     removeState.error ??
     issueState.error ??
-    payState.error;
+    payState.error ??
+    remindState.error;
   const success =
     statusState.success ??
     embedState.success ??
     uploadState.success ??
     lockState.success ??
     issueState.success ??
-    payState.success;
+    payState.success ??
+    remindState.success;
 
   return (
     <div
@@ -111,7 +117,7 @@ export function MilestoneEditor({
             <p className="text-sm leading-relaxed text-ink-600">{milestone.description}</p>
           ) : null}
 
-          <FormMessage error={error} success={success} />
+          <FormMessage error={error} success={success} warning={remindState.warning} />
 
           {/* Status controls */}
           <div className="flex flex-wrap items-center gap-2">
@@ -294,7 +300,26 @@ export function MilestoneEditor({
                   </a>
                 ) : null}
                 {invoice.status === "unpaid" ? (
-                  <form action={payAction} className="ml-auto flex items-center gap-2">
+                  <form action={remindAction} className="ml-auto">
+                    <input type="hidden" name="projectId" value={projectId} />
+                    <input type="hidden" name="invoiceId" value={invoice.id} />
+                    <SubmitButton
+                      variant="secondary"
+                      size="sm"
+                      disabled={!emailConfigured}
+                      title={
+                        emailConfigured
+                          ? "Email your client a reminder now"
+                          : "Email isn't set up on this deployment"
+                      }
+                    >
+                      <BellRing className="size-3.5" aria-hidden />
+                      Send reminder
+                    </SubmitButton>
+                  </form>
+                ) : null}
+                {invoice.status === "unpaid" ? (
+                  <form action={payAction} className="flex items-center gap-2">
                     <input type="hidden" name="projectId" value={projectId} />
                     <input type="hidden" name="invoiceId" value={invoice.id} />
                     <input

@@ -11,9 +11,9 @@
     "typecheck": "tsc --noEmit",
     "db:reset": "supabase db reset",
     "db:push": "supabase db push",
-    "test": "node --conditions=react-server --experimental-strip-types --no-warnings --test \"tests/*.test.ts\"",
+    "test": "node --conditions=react-server --experimental-strip-types --no-warnings --import ./tests/register-hooks.mjs --test \"tests/*.test.ts\"",
     "check": "npm run lint && npm run typecheck && npm test",
-    "test:sql": "psql \"${DATABASE_URL:-postgresql://postgres:postgres@127.0.0.1:54322/postgres}\" -v ON_ERROR_STOP=1 -f tests/sql/rls.test.sql"
+    "test:sql": "psql \"${DATABASE_URL:-postgresql://postgres:postgres@127.0.0.1:54322/postgres}\" -v ON_ERROR_STOP=1 -f tests/sql/rls.test.sql -f tests/sql/email_queue.test.sql"
   },
   "dependencies": {
     "@supabase/ssr": "0.12.5",

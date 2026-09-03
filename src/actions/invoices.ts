@@ -6,7 +6,12 @@ import { requireWorkspace } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { recordAudit } from "@/lib/audit";
 import { fail, messageFrom, ok, type ActionState } from "@/actions/types";
-import type { Invoice } from "@/lib/database.types";
+import { enqueueEmail, drainEmailQueue } from "@/lib/email/queue";
+import { isEmailConfigured } from "@/lib/email/resend";
+import { brandOf } from "@/lib/email/brand";
+import { daysOverdue } from "@/lib/email/reminders";
+import { formatDate, formatMoney } from "@/lib/utils";
+import type { Invoice, InvoiceStatus, Project } from "@/lib/database.types";
 
 const issueSchema = z.object({
   projectId: z.string().uuid(),
@@ -132,5 +137,118 @@ export async function voidInvoice(_prev: ActionState, formData: FormData): Promi
     return ok("Invoice voided.");
   } catch (caught) {
     return fail(messageFrom(caught, "Could not void the invoice."));
+  }
+}
+
+/**
+ * The freelancer's own nudge, on their timing rather than the schedule's.
+ *
+ * No dedupe key, so it always sends — clicking it is an explicit decision. It
+ * drains the queue inline afterwards so the result is visible immediately
+ * instead of waiting for the next cron tick.
+ */
+export async function sendPaymentReminder(
+  _prev: ActionState,
+  formData: FormData,
+): Promise<ActionState> {
+  try {
+    const workspace = await requireWorkspace();
+    const projectId = String(formData.get("projectId") ?? "");
+    const invoiceId = String(formData.get("invoiceId") ?? "");
+    if (!projectId || !invoiceId) return fail("Missing invoice.");
+
+    if (!isEmailConfigured()) {
+      return fail("Email isn't set up on this deployment. Add RESEND_API_KEY and RESEND_FROM_EMAIL.");
+    }
+
+    const supabase = await createClient();
+
+    // Read through the caller's own client so RLS confirms this invoice is
+    // theirs before the service role touches the outbox.
+    const { data: invoice } = await supabase
+      .from("invoices")
+      .select(
+        `id, amount_cents, currency, status, due_date, checkout_url,
+         milestone:milestones!inner ( id, title, project_id )`,
+      )
+      .eq("id", invoiceId)
+      .maybeSingle<{
+        id: string;
+        amount_cents: number;
+        currency: string;
+        status: InvoiceStatus;
+        due_date: string | null;
+        checkout_url: string | null;
+        milestone: { id: string; title: string; project_id: string } | null;
+      }>();
+
+    if (!invoice?.milestone) return fail("Invoice not found.");
+    if (invoice.milestone.project_id !== projectId) return fail("Invoice not found.");
+    if (invoice.status !== "unpaid") return fail("Only an unpaid invoice can be chased.");
+
+    const { data: project } = await supabase
+      .from("projects")
+      .select("id, title, client_name, client_email")
+      .eq("id", projectId)
+      .single<Pick<Project, "id" | "title" | "client_name" | "client_email">>();
+
+    if (!project) return fail("Project not found.");
+
+    const { count: lockedCount } = await supabase
+      .from("deliverables")
+      .select("id", { count: "exact", head: true })
+      .eq("milestone_id", invoice.milestone.id)
+      .eq("locked_until_paid", true);
+
+    const result = await enqueueEmail({
+      organizationId: workspace.organization.id,
+      projectId,
+      milestoneId: invoice.milestone.id,
+      invoiceId: invoice.id,
+      kind: "payment_reminder",
+      to: project.client_email,
+      replyTo: workspace.email || null,
+      payload: {
+        brand: brandOf(workspace.organization),
+        clientName: project.client_name,
+        projectTitle: project.title,
+        milestoneTitle: invoice.milestone.title,
+        amount: formatMoney(invoice.amount_cents, invoice.currency),
+        dueDate: invoice.due_date ? formatDate(invoice.due_date) : "on receipt",
+        daysOverdue: invoice.due_date ? daysOverdue(invoice.due_date, new Date()) : 0,
+        checkoutUrl: invoice.checkout_url,
+        unlocksFiles: (lockedCount ?? 0) > 0,
+      },
+    });
+
+    if (!result.queued) {
+      return fail(
+        result.reason === "suppressed"
+          ? `${project.client_email} has bounced or marked a previous email as spam, so we've stopped mailing it. Send this one yourself.`
+          : (result.message ?? "Could not queue the reminder."),
+      );
+    }
+
+    const delivery = await drainEmailQueue(5);
+
+    await recordAudit(supabase, {
+      organizationId: workspace.organization.id,
+      projectId,
+      milestoneId: invoice.milestone.id,
+      action: `Payment reminder sent to ${project.client_email}`,
+      actorType: "freelancer",
+      actorEmail: workspace.email,
+      metadata: { invoice_id: invoice.id },
+    });
+
+    revalidatePath(`/dashboard/projects/${projectId}`);
+    return delivery.sent > 0
+      ? ok(`Reminder sent to ${project.client_email}.`)
+      : {
+          success: "Reminder queued.",
+          warning: "It hasn't gone out yet — the next scheduled run will retry it.",
+        };
+  } catch (caught) {
+    return fail(messageFrom(caught, "Could not send the reminder."));
   }
 }

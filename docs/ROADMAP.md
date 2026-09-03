@@ -27,9 +27,11 @@ documents table, a rendered agreement, and a signature artifact with more
 ceremony than a milestone tick.
 
 ### WhatsApp notification webhooks
-**Missing entirely.** Outbound only: a queue table, a worker, and WhatsApp
-Business API credentials per organization. Worth building on the same queue the
-remaining transactional emails need, rather than a second one-off transport.
+**Missing entirely.** Needs WhatsApp Business API credentials per organization
+and a template approval process on Meta's side. The delivery half is mostly
+solved: `email_messages` is already a generic outbox with retries, dedupe and
+suppression, so this wants a `channel` column and a second transport rather than
+a parallel queue.
 
 ### Multi-seat team roles
 **Now:** `organization_members` is many-to-many with `owner`/`admin`/`member`
@@ -40,11 +42,17 @@ page), seat-count enforcement against the plan, and an organization switcher.
 
 ## Also missing, worth naming
 
-- **The rest of the transactional email.** Portal links now send through Resend.
-  Approval receipts, payment reminders and a "milestone ready for review" nudge
-  do not exist. They differ from the link email in one important way: nobody is
-  watching them go out, so they need a queue with retries and a bounce/complaint
-  webhook rather than the inline send used here.
+- **The remaining notifications.** Portal links, approval receipts, studio
+  notifications and payment reminders all send. A "milestone ready for review"
+  nudge to the client does not — it needs the freelancer to choose when it fires,
+  which is a UI decision rather than a plumbing one. Per-recipient unsubscribe
+  and per-organization send windows are also absent; the reminder series is
+  bounded and suppression is honoured, but a client cannot opt out of an
+  individual stream.
+- **An outbox UI.** `email_messages` records what was sent, what failed and why,
+  and members can read their own organization's rows, but nothing renders them.
+  A freelancer currently learns a reminder bounced only by noticing the client
+  never replied.
 - **CI.** The tests exist (`npm run check` for unit tests, `npm run test:sql`
   for the RLS and business-rule assertions against a live Postgres) but nothing
   runs them automatically. A GitHub Actions workflow that boots

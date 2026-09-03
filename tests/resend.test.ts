@@ -115,6 +115,50 @@ describe("sending against a stub provider", () => {
     assert.match(result.ok === false ? result.message : "", /not verified/);
   });
 
+  test("a 4xx is permanent — retrying an unverified domain only burns the budget", async () => {
+    for (const status of [400, 401, 403, 404, 422]) {
+      respond = (res) => {
+        res.writeHead(status, { "content-type": "application/json" });
+        res.end(JSON.stringify({ message: "nope" }));
+      };
+      const result = await sendEmail(INPUT);
+      assert.equal(result.ok, false);
+      assert.equal(result.ok === false && result.retryable, false, `${status} should not retry`);
+      assert.equal(result.ok === false && result.reason, "rejected");
+    }
+  });
+
+  test("a 429 or 5xx is retryable — the provider is briefly unable, not refusing", async () => {
+    for (const status of [408, 429, 500, 502, 503]) {
+      respond = (res) => {
+        res.writeHead(status, { "content-type": "application/json" });
+        res.end(JSON.stringify({}));
+      };
+      const result = await sendEmail(INPUT);
+      assert.equal(result.ok, false);
+      assert.equal(result.ok === false && result.retryable, true, `${status} should retry`);
+      assert.equal(result.ok === false && result.reason, "unavailable");
+    }
+  });
+
+  test("an unreachable provider is retryable", async () => {
+    const previous = process.env.RESEND_ENDPOINT_OVERRIDE;
+    process.env.RESEND_ENDPOINT_OVERRIDE = "http://127.0.0.1:1/emails";
+    const result = await sendEmail(INPUT);
+    if (previous) process.env.RESEND_ENDPOINT_OVERRIDE = previous;
+    assert.equal(result.ok, false);
+    assert.equal(result.ok === false && result.retryable, true);
+    assert.equal(result.ok === false && result.reason, "network");
+  });
+
+  test("a missing configuration is not retryable", async () => {
+    const key = process.env.RESEND_API_KEY;
+    delete process.env.RESEND_API_KEY;
+    const result = await sendEmail(INPUT);
+    if (key) process.env.RESEND_API_KEY = key;
+    assert.equal(result.ok === false && result.retryable, false);
+  });
+
   test("a rejection with no body still returns a usable message", async () => {
     respond = (res) => {
       res.writeHead(500, { "content-type": "text/plain" });

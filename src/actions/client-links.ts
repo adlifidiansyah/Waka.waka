@@ -8,6 +8,7 @@ import { recordAudit } from "@/lib/audit";
 import { generateClientToken, portalLinkFor } from "@/lib/tokens";
 import { appUrl } from "@/lib/env";
 import { renderPortalLinkEmail } from "@/lib/email/render";
+import { brandOf } from "@/lib/email/brand";
 import { isEmailConfigured, sendEmail } from "@/lib/email/resend";
 import { formatDate } from "@/lib/utils";
 import { fail, messageFrom, ok, type ActionState } from "@/actions/types";
@@ -104,15 +105,12 @@ export async function createClientLink(
     }
 
     const rendered = renderPortalLinkEmail({
+      brand: brandOf(workspace.organization),
       clientName: project.client_name,
-      studioName: workspace.organization.name,
       projectTitle: project.title,
       portalUrl: link,
-      brandColor: workspace.organization.brand_color,
-      logoUrl: workspace.organization.logo_url,
       expiresOn: expiresAt ? formatDate(expiresAt) : null,
       message: parsed.data.message,
-      showBadge: workspace.organization.badge_enabled,
     });
 
     const result = await sendEmail({

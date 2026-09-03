@@ -151,7 +151,69 @@ id so a double-submitted form cannot mail a client two portal links.
 Because only the token hash is stored, there is no "resend" — the raw token is
 gone the moment the action returns. Emailing therefore happens inside
 `createClientLink` rather than as a separate step, and the UI states that a lost
-link is re-issued rather than recovered.
+link is re-issued rather than recovered. The approval receipt carries no portal
+link at all for the same reason: linking would mean minting a live token for
+every receipt, so the receipt is a record and the client uses the link they
+already have.
+
+### Inline sends and the outbox
+
+The portal link is sent inline. Every other email goes through `email_messages`.
+The dividing line is whether a person is watching: a freelancer who clicks
+"Create & send" can read a failure and copy the link instead, but nobody is
+looking when an approval receipt or a 3-days-overdue reminder fires, so those
+need somewhere to fail loudly and be retried.
+
+The outbox stores render inputs rather than rendered HTML — rows stay small, and
+a template fix reaches anything still queued. The price is that a payload can
+outlive the template that reads it, so `renderQueued()` validates against a Zod
+schema per kind and a mismatch becomes a *permanent* failure on that one message
+rather than a crashed worker.
+
+`claim_email_batch()` uses `for update skip locked`, so overlapping cron runs
+split the queue instead of double-sending. The claim itself increments
+`attempts` and pushes `next_attempt_at` five minutes out, which means a worker
+that dies mid-send leaves a leased row that becomes claimable again rather than
+a wedged one. Failures back off quadratically (1m, 4m, 9m, 16m) up to
+`max_attempts`.
+
+Whether a failure is worth retrying is decided by the transport, not the worker,
+because only the transport sees the status code. A 4xx is permanent — the
+provider is saying the message itself is wrong (unverified sending domain,
+malformed recipient) and further attempts only burn the budget. A 429, a 5xx, a
+timeout or a connection error is retryable: the provider is briefly unable
+rather than refusing. Collapsing those two into "any non-2xx is permanent" is a
+real bug, and was one until an end-to-end run against a stub provider returned a
+502 and the message was abandoned on the first try.
+
+Nothing writes to the outbox through the browser-visible keys. `email_messages`
+has a SELECT policy and deliberately no INSERT policy: every enqueue runs from a
+Server Action or webhook that has already authorised the caller, through the
+service role. Without that, any signed-in user could queue arbitrary mail from
+the deployment's verified sending domain — the SQL suite asserts the absence of
+a write policy for exactly this reason.
+
+### Reminder scheduling
+
+`schedule.ts` holds the timing rules and imports nothing, so the off-by-one-prone
+part is testable without a database. Five steps over seventeen days, each with a
+stable id that becomes the dedupe key `payment_reminder:<invoice>:<step>`. The
+sweep can therefore run as often as it likes and be idempotent.
+
+`currentReminderStep()` returns the *latest* step passed rather than every step
+passed. After a cron outage the client gets the current nudge, not four of them
+at once — an availability problem on our side should not look like harassment on
+theirs. The series then stops: a reminder that never ends trains the recipient
+to filter the sender, which costs the freelancer the next project's emails too.
+
+### Suppression
+
+Bounces and complaints arrive on `/api/webhooks/resend`, Svix-signed. A
+suppressed address is recorded globally rather than per-organization, because a
+hard bounce is a fact about the address and every studio on a deployment shares
+its sending reputation. `suppress_email()` also cancels anything still queued
+for that address, and the worker re-checks suppression at send time — a reminder
+series outlives a bounce that happens between queueing and sending.
 
 ## Server Actions
 
@@ -177,11 +239,14 @@ blocked approval — but they log loudly on the server so the gap is visible.
 - **Single-organization membership.** `requireWorkspace()` takes a user's first
   membership. The schema is many-to-many and ready for an org switcher; the UI
   for it is not built.
-- **Email is sent inline, not queued.** A send happens inside the Server Action
-  and its failure is reported to the person who triggered it, which is right for
-  a link the freelancer is watching go out. It would be wrong for volume email:
-  approval receipts and payment reminders should go through a queue with
-  retries, and that queue does not exist yet.
+- **The outbox is a database table drained by cron,** not a broker. It is the
+  right size for one deployment's transactional mail and has no extra
+  infrastructure to run, but it polls, so the floor on delivery latency is the
+  cron interval. Anything latency-sensitive would want a real queue.
+- **Reminder timing is UTC-only.** `daysOverdue()` floors both sides to UTC
+  midnight, so a client in UTC+13 may see a "due today" email on what is already
+  tomorrow for them. Per-organization timezones are a schema change plus a
+  send-window preference, and are not built.
 - **Resend over `fetch`, not the SDK,** matching the payment webhooks. The send
   endpoint is one POST; the trade is that attachments, batching and scheduled
   sends would each need writing by hand.
