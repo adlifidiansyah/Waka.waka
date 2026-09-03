@@ -27,6 +27,11 @@ Budget about ten minutes.
 
 ## 2. Apply the schema
 
+> Already provisioned: the live project for this repo is `clientdeck`
+> (`txmvtgjwqphrassowovt`, ap-southeast-1) with all six migrations applied.
+> The steps below are for setting up a fresh one.
+
+
 From a clone of this repo, with the [Supabase CLI](https://supabase.com/docs/guides/cli)
 installed:
 
@@ -159,6 +164,7 @@ public knowledge, it is in this repository.
 | Portal links point at localhost | `NEXT_PUBLIC_APP_URL` not set to the real origin |
 | Sign-in redirects to localhost | Supabase **Site URL** / redirect URLs not updated (step 4) |
 | Deploy fails on cron | A sub-daily schedule in `vercel.json` on a Hobby account |
+| Portal 500s, dashboard fine | `SUPABASE_SERVICE_ROLE_KEY` missing — the portal resolves tokens with it |
 | Email option greyed out | `RESEND_API_KEY` or `RESEND_FROM_EMAIL` missing |
 | Sends rejected as unverified | The `RESEND_FROM_EMAIL` domain is not verified in Resend |
 | Reminders never fire | `CRON_SECRET` unset — the endpoint refuses to run |

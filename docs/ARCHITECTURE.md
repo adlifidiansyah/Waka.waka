@@ -65,6 +65,27 @@ only re-issued. That is the correct trade. A stolen database backup should not
 be a set of working portal links to every client of every studio on the
 platform.
 
+## Keeping internals off the public API
+
+Supabase serves the `public` schema over PostgREST, so anything defined there is
+reachable at `/rest/v1/rpc/<name>`. The RLS helpers must not be: `project_org()`
+and `milestone_org()` are SECURITY DEFINER and map any project or milestone id
+to its organization, which is a small RLS bypass if you can call them.
+
+They cannot simply have EXECUTE revoked, because RLS policy expressions are
+evaluated with the querying role's privileges — `authenticated` genuinely needs
+EXECUTE on the helpers its own policies call. So they live in a `private` schema
+that PostgREST does not serve: the grant stays, the endpoint disappears.
+
+Six functions stay in `public` because the application calls them by RPC:
+`portal_approve_milestone`, `settle_invoice`, `claim_email_batch`,
+`mark_email_sent`, `mark_email_failed` and `suppress_email`. All but
+`settle_invoice` are revoked from `anon` and `authenticated`. `settle_invoice`
+is deliberately callable by a signed-in user — it is what the dashboard's "Mark
+paid" button uses — and carries the membership check described above. Supabase's
+linter flags it for that reason; the flag is correct about the shape and wrong
+about the risk, and the SQL suite asserts the check that makes it safe.
+
 ## Rules that live in Postgres, not in React
 
 Anything whose failure costs someone money is enforced in the database:
