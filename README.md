@@ -19,6 +19,7 @@ Clients never create an account. They click a link.
 | Capability | Where it lives |
 |---|---|
 | Magic-link client access (revocable, optionally expiring) | `src/lib/tokens.ts`, `src/lib/portal.ts` |
+| Portal links emailed to the client, branded per studio | `src/lib/email/**`, `src/actions/client-links.ts` |
 | Milestone tracker with a visual progress bar | `src/components/portal/portal-overview.tsx` |
 | One-click approvals with a signed, timestamped audit row | `src/actions/portal.ts`, `portal_approve_milestone()` |
 | Asset Locker — downloads gated on invoice payment | `isDeliverableUnlocked()`, `src/actions/portal.ts` |
@@ -31,7 +32,9 @@ Clients never create an account. They click a link.
 
 Not built (deliberately deferred — see [docs/ROADMAP.md](docs/ROADMAP.md)):
 contract e-signatures, WhatsApp notification webhooks, change-request/scope-creep
-flows, team seat invitations, and automated custom-domain provisioning.
+flows, team seat invitations, automated custom-domain provisioning, and the
+other transactional emails (approval receipts, payment reminders) — only the
+portal-link email is wired.
 
 ---
 
@@ -40,8 +43,10 @@ flows, team seat invitations, and automated custom-domain provisioning.
 - **Next.js 16** (App Router, React 19, Server Actions) with TypeScript
 - **Tailwind CSS v4**, lucide icons
 - **Supabase** — Postgres with row-level security, Auth, and private Storage
+- **Resend** for transactional email
 - **@tanstack/react-query** for client-side cache
-- No payment SDK at runtime: webhook signatures are verified directly
+- No payment or email SDK at runtime: webhook signatures are verified directly
+  and Resend is called over `fetch`
 
 ---
 
@@ -107,6 +112,31 @@ three decisions worth knowing up front:
    out a paid tier, unlock a gated file, or skip an audit row.
 
 ---
+
+## Email
+
+Set `RESEND_API_KEY` and `RESEND_FROM_EMAIL` (a verified sender on a domain you
+control) and the client-links panel gains an "email this link to the client"
+option. The email is branded with the studio's logo, colour and name, carries an
+optional note the freelancer types, and sets `reply_to` to the freelancer's own
+address so client replies land in their inbox rather than a no-reply void.
+
+Two consequences of the token design are surfaced in the UI rather than hidden:
+
+- **A link cannot be re-sent, only re-issued.** Only the SHA-256 hash is stored,
+  so there is no raw token left to put in a second email. The panel says so, and
+  "Create & send" always mints a fresh link.
+- **A failed send does not fail the action.** The link was created and is valid,
+  so the panel shows it for copying alongside the provider's own reason for
+  refusing — an unverified domain, a bad recipient — instead of a flat error
+  that implies nothing happened.
+
+Delivery state is recorded on `client_access_tokens` (`emailed_at`,
+`emailed_to`, `email_provider_id`) and every send, and every failure, appends to
+the audit trail.
+
+Without the two variables the app runs normally; the option is disabled with a
+note explaining what to set.
 
 ## Payments
 

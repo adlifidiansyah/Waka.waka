@@ -28,9 +28,8 @@ ceremony than a milestone tick.
 
 ### WhatsApp notification webhooks
 **Missing entirely.** Outbound only: a queue table, a worker, and WhatsApp
-Business API credentials per organization. Worth doing after the email
-notifications that also do not exist yet — right now the freelancer copies a
-link and sends it themselves, which is honest but manual.
+Business API credentials per organization. Worth building on the same queue the
+remaining transactional emails need, rather than a second one-off transport.
 
 ### Multi-seat team roles
 **Now:** `organization_members` is many-to-many with `owner`/`admin`/`member`
@@ -41,9 +40,11 @@ page), seat-count enforcement against the plan, and an organization switcher.
 
 ## Also missing, worth naming
 
-- **Email delivery.** No transactional email at all. Portal links are copied by
-  hand. Wiring Resend to send the link, an approval receipt and a payment
-  reminder is the highest-value next increment.
+- **The rest of the transactional email.** Portal links now send through Resend.
+  Approval receipts, payment reminders and a "milestone ready for review" nudge
+  do not exist. They differ from the link email in one important way: nobody is
+  watching them go out, so they need a queue with retries and a bounce/complaint
+  webhook rather than the inline send used here.
 - **CI.** The tests exist (`npm run check` for unit tests, `npm run test:sql`
   for the RLS and business-rule assertions against a live Postgres) but nothing
   runs them automatically. A GitHub Actions workflow that boots

@@ -101,6 +101,9 @@ export interface ClientAccessToken {
   expires_at: string | null;
   revoked_at: string | null;
   last_used_at: string | null;
+  emailed_at: string | null;
+  emailed_to: string | null;
+  email_provider_id: string | null;
   created_at: string;
 }
 

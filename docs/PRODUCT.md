@@ -54,6 +54,7 @@ surface that supports a higher project rate.
 - Asset Locker, pay-to-unlock downloads
 - Embed frame for Figma / Loom / staging URLs
 - One-click "Approve & next"
+- Portal links emailed to the client, branded per studio
 
 **Phase 2 (retention) — not built.** See [ROADMAP.md](ROADMAP.md): custom-domain
 CNAME provisioning, scope-creep change requests, contract e-signatures, WhatsApp

@@ -27,6 +27,7 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
     milestones,
     tokens,
     auditLog,
+    emailConfigured,
     approvedCount,
     collectedCents,
     outstandingCents,
@@ -96,7 +97,12 @@ export default async function ProjectPage({ params }: { params: Promise<{ id: st
         </Card>
       </div>
 
-      <ClientLinkPanel projectId={project.id} tokens={tokens} />
+      <ClientLinkPanel
+        projectId={project.id}
+        tokens={tokens}
+        emailConfigured={emailConfigured}
+        clientEmail={project.client_email}
+      />
 
       {/* Milestones */}
       <Card>

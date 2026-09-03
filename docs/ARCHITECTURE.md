@@ -127,6 +127,32 @@ Frames are sandboxed without `allow-same-origin` and without
 `allow-top-navigation`, so embedded content cannot reach the parent page or
 navigate the client away.
 
+## Transactional email
+
+`src/lib/email/` splits along the same line as `payments.ts`: `render.ts` is
+pure and unit-tested, `resend.ts` does the network and carries the
+`server-only` marker.
+
+The rendering half is where the risk is. A portal email interpolates a studio
+name, a project title, a client's name and a freelancer's free-text note into
+HTML that lands in someone else's mail client. All of it goes through
+`escapeHtml`, brand colours are re-validated against `#rrggbb` before touching a
+`style` attribute, and logo URLs must parse as absolute `https` before reaching
+a `src`. `renderPortalLinkEmail` also refuses outright to send a portal URL that
+is not https unless it is localhost, so a deployment left on the default
+`NEXT_PUBLIC_APP_URL` cannot mail a client an unencrypted link.
+
+The transport never throws. A send failure returns a typed result carrying the
+provider's own message, and the action turns that into a `warning` beside a
+`success`: the link exists and is valid, so the freelancer is shown it to copy
+rather than told the operation failed. `Idempotency-Key` is set from the token
+id so a double-submitted form cannot mail a client two portal links.
+
+Because only the token hash is stored, there is no "resend" — the raw token is
+gone the moment the action returns. Emailing therefore happens inside
+`createClientLink` rather than as a separate step, and the UI states that a lost
+link is re-issued rather than recovered.
+
 ## Server Actions
 
 Every mutation is a Server Action returning a uniform `ActionState`
@@ -151,3 +177,11 @@ blocked approval — but they log loudly on the server so the gap is visible.
 - **Single-organization membership.** `requireWorkspace()` takes a user's first
   membership. The schema is many-to-many and ready for an org switcher; the UI
   for it is not built.
+- **Email is sent inline, not queued.** A send happens inside the Server Action
+  and its failure is reported to the person who triggered it, which is right for
+  a link the freelancer is watching go out. It would be wrong for volume email:
+  approval receipts and payment reminders should go through a queue with
+  retries, and that queue does not exist yet.
+- **Resend over `fetch`, not the SDK,** matching the payment webhooks. The send
+  endpoint is one POST; the trade is that attachments, batching and scheduled
+  sends would each need writing by hand.

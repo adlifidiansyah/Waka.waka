@@ -1,6 +1,7 @@
 import "server-only";
 
 import { createClient } from "@/lib/supabase/server";
+import { isEmailConfigured } from "@/lib/email/resend";
 import type { TokenRow } from "@/components/dashboard/client-link-panel";
 import type {
   AuditLog,
@@ -17,6 +18,8 @@ export interface ProjectDetail {
   milestones: MilestoneWithChildren[];
   tokens: TokenRow[];
   auditLog: AuditLog[];
+  /** Whether this deployment can send the portal link by email. */
+  emailConfigured: boolean;
   approvedCount: number;
   collectedCents: number;
   outstandingCents: number;
@@ -64,7 +67,8 @@ export async function loadProjectDetail(projectId: string): Promise<ProjectDetai
     supabase
       .from("client_access_tokens")
       .select(
-        "id, project_id, label, client_email, expires_at, revoked_at, last_used_at, created_at",
+        "id, project_id, label, client_email, expires_at, revoked_at, last_used_at, " +
+          "emailed_at, emailed_to, email_provider_id, created_at",
       )
       .eq("project_id", project.id)
       .order("created_at", { ascending: false })
@@ -100,6 +104,7 @@ export async function loadProjectDetail(projectId: string): Promise<ProjectDetai
     milestones: withChildren,
     tokens,
     auditLog: auditResult.data ?? [],
+    emailConfigured: isEmailConfigured(),
     approvedCount: withChildren.filter((m) => m.status === "approved").length,
     collectedCents: issued
       .filter((i) => i.status === "paid")
